@@ -63,7 +63,7 @@ async def verify_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         correct_answer = pending_users[user_id]
         if query.data == correct_answer:
             await query.answer("Верно!")
-            await context.bot.send_message(chat_id, f"Пользователь {query.from_user.full_name} успешно проверен!")
+            await context.bot.send_message(chat_id, f"Пользователь {query.from_user.full_name} успешно верифицирован!")
             del pending_users[user_id]
         else:
             await query.answer("Неверный ответ. Попробуйте снова!")
