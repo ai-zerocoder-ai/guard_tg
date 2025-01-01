@@ -1,23 +1,23 @@
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import os
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
 
-# Загрузка переменных окружения из .env
+# Загрузка токена из .env файла
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 if not BOT_TOKEN:
-    raise ValueError("Не найден токен Telegram в файле .env")
+    raise ValueError("Токен Telegram бота не найден в .env файле.")
 
 # Словарь для хранения состояния проверки пользователей
 pending_users = {}
 
-def start(update: Update, context: CallbackContext) -> None:
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда start, приветствие"""
-    update.message.reply_text("Бот для верификации новых пользователей.")
+    await update.message.reply_text("Бот для верификации новых пользователей запущен.")
 
-def new_member(update: Update, context: CallbackContext) -> None:
+async def new_member(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработка новых пользователей"""
     for member in update.message.new_chat_members:
         question = "Какой газ оказывает наибольший вклад в парниковый эффект?"
@@ -27,30 +27,33 @@ def new_member(update: Update, context: CallbackContext) -> None:
         keyboard = [[
             InlineKeyboardButton("Водяной пар", callback_data="Водяной пар"),
             InlineKeyboardButton("Метан", callback_data="Метан"),
-            InlineKeyboardButton("Углекислый газ", callback_data="Углекислый газ"),
+            InlineKeyboardButton("CO2", callback_data="CO2"),
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        context.bot.send_message(
+        await context.bot.send_message(
             chat_id=update.message.chat.id,
             text=f"Добро пожаловать, {member.full_name}! Пожалуйста, ответьте на вопрос: {question}",
             reply_markup=reply_markup
         )
 
         # Устанавливаем таймер на 2 минуты
-        context.job_queue.run_once(
-            kick_unverified_user, 120, context=(update.message.chat.id, member.id)
+        context.application.job_queue.run_once(
+            kick_unverified_user, 120, chat_id=update.message.chat.id, name=str(member.id)
         )
 
-def kick_unverified_user(context: CallbackContext):
+async def kick_unverified_user(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Удаление пользователя, не прошедшего проверку"""
-    chat_id, user_id = context.job.context
-    if user_id in pending_users:
-        context.bot.kick_chat_member(chat_id, user_id)
-        del pending_users[user_id]
-        context.bot.send_message(chat_id, f"Пользователь {user_id} не прошел проверку и был удален.")
+    job = context.job
+    user_id = int(job.name)
+    chat_id = job.chat_id
 
-def verify_answer(update: Update, context: CallbackContext) -> None:
+    if user_id in pending_users:
+        await context.bot.ban_chat_member(chat_id, user_id)
+        del pending_users[user_id]
+        await context.bot.send_message(chat_id, f"Пользователь {user_id} не прошел проверку и был удален.")
+
+async def verify_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Проверка ответа пользователя"""
     query = update.callback_query
     user_id = query.from_user.id
@@ -59,27 +62,27 @@ def verify_answer(update: Update, context: CallbackContext) -> None:
     if user_id in pending_users:
         correct_answer = pending_users[user_id]
         if query.data == correct_answer:
-            context.bot.answer_callback_query(query.id, "Верно!")
-            context.bot.send_message(chat_id, f"Пользователь {query.from_user.full_name} успешно проверен!")
+            await query.answer("Верно!")
+            await context.bot.send_message(chat_id, f"Пользователь {query.from_user.full_name} успешно проверен!")
             del pending_users[user_id]
         else:
-            context.bot.answer_callback_query(query.id, "Неверный ответ. Попробуйте снова!")
-            context.bot.kick_chat_member(chat_id, user_id)
+            await query.answer("Неверный ответ. Попробуйте снова!")
+            await context.bot.ban_chat_member(chat_id, user_id)
     else:
-        context.bot.answer_callback_query(query.id, "Вы уже прошли проверку или не являетесь новым участником.")
+        await query.answer("Вы уже прошли проверку или не являетесь новым участником.")
 
-def main():
+def main() -> None:
     """Запуск бота"""
-    updater = Updater(BOT_TOKEN)
+    # Создаём приложение с job_queue
+    application = Application.builder().token(BOT_TOKEN).build()
 
-    dp = updater.dispatcher
+    # Добавляем обработчики
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_member))
+    application.add_handler(CallbackQueryHandler(verify_answer))
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.status_update.new_chat_members, new_member))
-    dp.add_handler(CallbackQueryHandler(verify_answer))
-
-    updater.start_polling()
-    updater.idle()
+    # Запускаем приложение
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
