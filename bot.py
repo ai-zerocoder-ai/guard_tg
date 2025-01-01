@@ -20,7 +20,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def new_member(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработка новых пользователей"""
     for member in update.message.new_chat_members:
-        question = "Какой газ оказывает наибольший вклад в парниковый эффект?"
+        question = "Какой газ оказывает наибольший вклад в общий естественный парниковый эффект Земли?"
         correct_answer = "Водяной пар"
         pending_users[member.id] = correct_answer
 
